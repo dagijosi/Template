@@ -3,21 +3,43 @@ import { useNavigate } from 'react-router-dom';
 import { addItem } from '../../data/items';
 import { Button } from '@/common/ui/Button';
 import { Input } from '@/common/ui/Input';
-import { FaPlus } from 'react-icons/fa';
+import { FaPlus, FaMagic } from 'react-icons/fa'; // Import FaMagic for AI icon
 import { FiTag } from 'react-icons/fi';
+import { useAIMutation } from '@/queries/useAIMutation'; // Import useAIMutation
 
 const ItemAdd: React.FC = () => {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const { mutate: callAI, isPending: isAILoading, error: aiError } = useAIMutation();
+
+  const handleGenerateAIName = () => {
+    setError(''); // Clear any previous errors
+    callAI('Suggest a single, creative name for a new item. Respond with only the name, no other text.', {
+      onSuccess: (data: string) => {
+        // The AI might return a full sentence, try to extract just the name
+        const suggestedName = data.replace(/["'.]/g, '').trim(); // Remove quotes, periods
+        setName(suggestedName);
+      },
+      onError: (err: Error) => {
+        setError(`AI Error: ${err.message}`);
+      },
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      addItem(name);
-      navigate('/items');
+      const names = name.split(',').map((n) => n.trim()).filter((n) => n.length > 0);
+      if (names.length > 0) {
+        names.forEach((n) => addItem(n));
+        navigate('/items');
+      } else {
+        setError('Item name(s) cannot be empty.');
+      }
     } else {
-      setError('Item name is required.');
+      setError('Item name(s) is required.');
     }
   };
 
@@ -37,18 +59,27 @@ const ItemAdd: React.FC = () => {
                   setError('');
                 }
               }}
-              placeholder="Enter item name"
+              placeholder="Enter item name(s) or generate with AI"
               icon={<FiTag />}
-              label="Name"
+              label="Name(s)"
               required
-              error={error}
+              error={error || (aiError ? aiError.message : '')}
               labelStyle="floating"
-              description="Enter the name of the item you want to add."
+              description="Enter the name(s) of the item(s) you want to add, separated by commas, or use AI to generate one."
             />
           </div>
+          <Button
+            type="button"
+            onClick={handleGenerateAIName}
+            className="w-full flex items-center justify-center"
+            disabled={isAILoading}
+            variant="outline"
+          >
+            {isAILoading ? 'Generating...' : <><FaMagic className="mr-2" /> Generate Name with AI</>}
+          </Button>
           <Button type="submit" className="w-full flex items-center justify-center">
             <FaPlus className="mr-2" />
-            Add Item
+            Add Item(s)
           </Button>
         </form>
       </div>

@@ -20,7 +20,8 @@ type ToolName =
   | "editItem"
   | "editItems"
   | "deleteItem"
-  | "deleteItems";
+  | "deleteItems"
+  | "generateItemName"; // Added new tool
 
 type ToolArgs =
   | { path: string }
@@ -98,6 +99,9 @@ const parseUserCommand = (userPrompt: string): ToolCall | null => {
       if (ids.length > 0) return { tool: "deleteItems", args: { ids } };
       return null;
     }
+    case "/generateItemName": {
+      return { tool: "generateItemName", args: {} };
+    }
     default:
       return null;
   }
@@ -127,6 +131,8 @@ Available tools:
   - Example: { "tool": "deleteItem", "args": { "id": 1 } }
 - deleteItems(ids: number[]): Deletes multiple items by their IDs. Provide a comma-separated list of item IDs.
   - Example: { "tool": "deleteItems", "args": { "ids": [1, 2] } }
+- generateItemName(): Generates a creative name for a new item.
+  - Example: { "tool": "generateItemName", "args": {} }
 - navigate(path: string): Navigates to a different page. Valid paths are "/", "/items", "/ai-demo".
   - Example: { "tool": "navigate", "args": { "path": "/items" } }
 
@@ -137,6 +143,7 @@ If the user is not asking to use a tool, just have a normal conversation. Do not
 `;
 };
 
+
 // ---------------------- useAIMutation Hook ----------------------
 export const useAIMutation = (
   modelName: 
@@ -145,10 +152,11 @@ export const useAIMutation = (
     | "gemini-2.5-flash"
     | "gemini-2.5-flash-lite" = "gemini-2.5-flash"
 ) => {
-  const { addMessage } = useChatStore();
+  const { addMessage, messages } = useChatStore(); // Get messages from store
   const navigate = useNavigate();
 
   return useMutation<string, Error, string>({
+
     mutationFn: async (prompt: string) => {
       const parsedToolCall = parseUserCommand(prompt);
 
@@ -250,7 +258,8 @@ export const useAIMutation = (
       }
 
       // ---------------------- AI Response ----------------------
-      const fullPrompt = `${getSystemPrompt()}\n\nUser query: "${prompt}"`;
+      const messageHistory = messages.slice(-5).map(msg => `${msg.sender === 'user' ? 'User' : 'AI'}: ${msg.text}`).join('\n');
+      const fullPrompt = `${getSystemPrompt()}\n\n--- Conversation History ---\n${messageHistory}\n\nUser query: "${prompt}"`;
       const aiResponse = await fetchAIResponse(fullPrompt, modelName);
 
       try {
@@ -348,6 +357,10 @@ export const useAIMutation = (
           }
           default:
             return aiResponse;
+          case "generateItemName": {
+            const aiSuggestedName = await fetchAIResponse('Suggest a single, creative name for a new item. Respond with only the name, no other text.', modelName);
+            return `AI suggested name: "${aiSuggestedName.replace(/["'.]/g, '').trim()}"`;
+          }
         }
       } catch {
         return aiResponse; // Regular response, not a tool call
