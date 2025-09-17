@@ -45,4 +45,45 @@ export const commands: Command[] = [
     description: 'Delete multiple items by their IDs. Usage: /deleteItems <id1>, <id2>, ...',
     template: '/deleteItems ',
   },
+  {
+    name: 'getTasks',
+    description: 'List all tasks. Usage: /getTasks',
+    template: '/getTasks',
+  },
+  {
+    name: 'getTaskById',
+    description: 'Get a task by its ID. Usage: /getTaskById <id>',
+    template: '/getTaskById ',
+  },
+  {
+    name: 'addTask',
+    description: 'Add a new task. Usage: /addTask <JSON_task_object>',
+    template: '/addTask ',
+  },
+  {
+    name: 'addTasks',
+    description: 'Add multiple new tasks. Usage: /addTasks <JSON_tasks_array>',
+    template: '/addTasks ',
+  },
+  {
+    name: 'editTask',
+    description: 'Edit an existing task. Usage: /editTask <id> <JSON_updated_fields>',
+    template: '/editTask ',
+  },
+  {
+    name: 'editTasks',
+    description: 'Edit multiple tasks. Usage: /editTasks <JSON_tasks_to_edit_array>',
+    template: '/editTasks ',
+  },
+  {
+    name: 'deleteTask',
+    description: 'Delete a task by its ID. Usage: /deleteTask <id>',
+    template: '/deleteTask ',
+  },
+  {
+    name: 'deleteTasks',
+    description: 'Delete multiple tasks by their IDs. Usage: /deleteTasks <id1>, <id2>, ...',
+    template: '/deleteTasks ',
+  },
 ];
+  

@@ -10,6 +10,10 @@ import Items from "../pages/items/Items";
 import ItemView from "../pages/items/ItemView";
 import ItemEdit from "../pages/items/ItemEdit";
 import AIDemo from "../pages/AIDemo";
+import Tasks from "../pages/tasks/Tasks";
+import TaskAdd from "../pages/tasks/TaskAdd";
+import TaskEdit from "../pages/tasks/TaskEdit";
+import TaskView from "../pages/tasks/TaskView";
 import type { AppRoute } from "../types/AppType";
 
 export const ROUTES = {
@@ -17,9 +21,14 @@ export const ROUTES = {
   SIGNUP: "/signup",
   LOGIN: "/login",
   ERROR: "*",
-  ITEMS: "/items",
+  ITEMS: "items",
   ITEM_ADD: "add",
   ITEM_VIEW: ":id",
+  ITEM_EDIT: ":id/edit",
+  TASKS: "tasks",
+  TASK_ADD: "add",
+  TASK_VIEW: ":id",
+  TASK_EDIT: ":id/edit",
 } as const;
 
 const routes: AppRoute[] = [
@@ -37,7 +46,16 @@ const routes: AppRoute[] = [
           { index: true, Component: Items },
           { path: ROUTES.ITEM_ADD, Component: ItemAdd },
           { path: ROUTES.ITEM_VIEW, Component: ItemView },
-          { path: ":id/edit", Component: ItemEdit },
+          { path: ROUTES.ITEM_EDIT, Component: ItemEdit },
+        ],
+      },
+      {
+        path: ROUTES.TASKS,
+        children: [
+          { index: true, Component: Tasks },
+          { path: ROUTES.TASK_ADD, Component: TaskAdd },
+          { path: ROUTES.TASK_VIEW, Component: TaskView },
+          { path: ROUTES.TASK_EDIT, Component: TaskEdit },
         ],
       },
       { path: "/ai-demo", Component: AIDemo },
