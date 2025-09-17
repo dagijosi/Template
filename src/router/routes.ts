@@ -8,6 +8,7 @@ import Signup from "../pages/Auth/Signup";
 import ItemAdd from "../pages/items/ItemAdd";
 import Items from "../pages/items/Items";
 import ItemView from "../pages/items/ItemView";
+import ItemEdit from "../pages/items/ItemEdit";
 import AIDemo from "../pages/AIDemo";
 import type { AppRoute } from "../types/AppType";
 
@@ -36,6 +37,7 @@ const routes: AppRoute[] = [
           { index: true, Component: Items },
           { path: ROUTES.ITEM_ADD, Component: ItemAdd },
           { path: ROUTES.ITEM_VIEW, Component: ItemView },
+          { path: ":id/edit", Component: ItemEdit },
         ],
       },
       { path: "/ai-demo", Component: AIDemo },
