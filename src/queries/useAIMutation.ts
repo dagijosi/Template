@@ -110,7 +110,7 @@ const parseUserCommand = (userPrompt: string): ToolCall | null => {
 // ---------------------- System Prompt ----------------------
 const getSystemPrompt = () => {
   const items = getItems();
-  return `You are a helpful assistant with access to tools for managing a list of items. When the user wants to manipulate items, you must respond with a JSON object representing a tool call.
+  return `You are a helpful assistant with access to tools for managing a list of items. You can analyze, summarize, and answer questions about the current items. You can also suggest new items or names. When the user wants to manipulate items, you must respond with a JSON object representing a tool call.
 
 The JSON object must have a "tool" property (the name of the tool) and an "args" property (an object with the arguments for the tool).
 
@@ -167,7 +167,7 @@ export const useAIMutation = (
           case "getItems": {
             const items = getItems();
             if (items.length === 0) return "You have no items.";
-            return `Here are your items:\n${items
+            return `You have ${items.length} items:\n${items
               .map((i) => `- (ID: ${i.id}) ${i.name}`)
               .join("\n")}`;
           }
@@ -270,7 +270,7 @@ export const useAIMutation = (
           case "getItems": {
             const items = getItems();
             if (items.length === 0) return "You have no items.";
-            return `Here are your items:\n${items
+            return `You have ${items.length} items:\n${items
               .map((i) => `- (ID: ${i.id}) ${i.name}`)
               .join("\n")}`;
           }
