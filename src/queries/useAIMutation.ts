@@ -213,10 +213,11 @@ Available tools:
 - deleteItems(ids: number[]): Deletes multiple items by their IDs. Provide a comma-separated list of item IDs.
   - Example: { "tool": "deleteItems", "args": { "ids": [1, 2] } }
 - generateItemName(): Generates a creative name for a new item.
-  - Example: { "tool": "generateItemName", "args": {} }
+  
 
-- getTasks(): Lists all tasks.
+  - getTasks(): Lists all tasks.
   - Example: { "tool": "getTasks", "args": {} }
+  - Example: If the user asks "How many tasks do I have?", respond with: { "tool": "getTasks", "args": {} }
 - getTaskById(id: number): Gets a single task by its ID.
   - Example: { "tool": "getTaskById", "args": { "id": 1 } }
 - addTask(task: Omit<Task, "id" | "createdAt" | "updatedAt">): Adds a new task.
@@ -262,15 +263,13 @@ export const useAIMutation = (
     mutationFn: async (prompt: string) => {
       const parsedToolCall = parseUserCommand(prompt);
 
-      // ---------------------- User-friendly slash commands ----------------------
-      if (parsedToolCall) {
-        const toolCall = parsedToolCall;
+      const handleToolCall = async (toolCall: ToolCall) => {
         switch (toolCall.tool) {
           case "getItems": {
             const items = getItems();
             if (items.length === 0) return "You have no items.";
             return `You have ${items.length} items:\n${items
-              .map((i) => `- (ID: ${i.id}) ${i.name}`)
+              .map((i) => `- (ID: ${i.id}) ${i.name}`) 
               .join("\n")}`;
           }
           case "getItemById": {
@@ -288,7 +287,7 @@ export const useAIMutation = (
           case "addItems": {
             const names = (toolCall.args as { names: string[] }).names;
             const newItems = names.map(name => addItem(name));
-            return `Successfully added items: ${newItems.map(item => `"${item.name}" (ID: ${item.id})`).join(", ")}`;
+            return `Successfully added items: ${newItems.map(item => `"${item.name}" (ID: ${item.id})`).join(", ")}`; 
           }
           case "editItem": {
             const { id, name } = toolCall.args as { id: number; name: string };
@@ -358,7 +357,7 @@ export const useAIMutation = (
             const tasks = getTasks();
             if (tasks.length === 0) return "You have no tasks.";
             return `You have ${tasks.length} tasks:\n${tasks
-              .map((t) => `- (ID: ${t.id}) ${t.name} (Status: ${t.status})`)
+              .map((t) => `- (ID: ${t.id}) ${t.name} (Status: ${t.status})`) 
               .join("\n")}`;
           }
           case "getTaskById": {
@@ -376,7 +375,7 @@ export const useAIMutation = (
           case "addTasks": {
             const tasksData = (toolCall.args as { tasks: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> }).tasks;
             const newTasks = tasksData.map(taskData => addTask(taskData));
-            return `Successfully added tasks: ${newTasks.map(task => `"${task.name}" (ID: ${task.id})`).join(", ")}`;
+            return `Successfully added tasks: ${newTasks.map(task => `"${task.name}" (ID: ${task.id})`).join(", ")}`; 
           }
           case "editTask": {
             const { id, updatedFields } = toolCall.args as { id: number; updatedFields: Partial<Omit<Task, "id" | "createdAt">> };
@@ -437,9 +436,17 @@ export const useAIMutation = (
             }
             return message.trim();
           }
+          case "generateItemName": {
+            const aiSuggestedName = await fetchAIResponse('Suggest a single, creative name for a new item. Respond with only the name, no other text.', modelName);
+            return `AI suggested name: "${aiSuggestedName.replace(/["'.]/g, '').trim()}"`;
+          }
           default:
-            return `Error: Unrecognized slash command: ${toolCall.tool}`;
+            return `Error: Unrecognized tool: ${toolCall.tool}`;
         }
+      };
+
+      if (parsedToolCall) {
+        return handleToolCall(parsedToolCall);
       }
 
       // ---------------------- AI Response ----------------------
@@ -450,103 +457,7 @@ export const useAIMutation = (
       try {
         const sanitized = aiResponse.replace(/```json\n|```/g, "").trim();
         const toolCall: ToolCall = JSON.parse(sanitized);
-
-        switch (toolCall.tool) {
-          case "getItems": {
-            const items = getItems();
-            if (items.length === 0) return "You have no items.";
-            return `You have ${items.length} items:\n${items
-              .map((i) => `- (ID: ${i.id}) ${i.name}`)
-              .join("\n")}`;
-          }
-          case "getItemById": {
-            const id = (toolCall.args as { id: number }).id;
-            const item = getItem(id);
-            return item
-              ? `Item (ID: ${item.id}): ${item.name}`
-              : `Error: Item with ID ${id} not found.`;
-          }
-          case "addItem": {
-            const name = (toolCall.args as { name: string }).name;
-            const newItem = addItem(name);
-            return `Successfully added item: "${newItem.name}" (ID: ${newItem.id})`;
-          }
-          case "addItems": {
-            const names = (toolCall.args as { names: string[] }).names;
-            const newItems = names.map(name => addItem(name));
-            return `Successfully added items: ${newItems.map(item => `"${item.name}" (ID: ${item.id})`).join(", ")}`;
-          }
-          case "editItem": {
-            const { id, name } = toolCall.args as { id: number; name: string };
-            const updatedItem = editItem(id, name);
-            return updatedItem
-              ? `Successfully updated item (ID: ${updatedItem.id}) to "${updatedItem.name}"`
-              : `Error: Item with ID ${id} not found.`;
-          }
-          case "editItems": {
-            const itemsToEdit = (toolCall.args as { items: Array<{ id: number; name: string }> }).items;
-            const updatedItems: string[] = [];
-            const notFoundItems: string[] = [];
-            itemsToEdit.forEach(({ id, name }) => {
-              const updatedItem = editItem(id, name);
-              if (updatedItem) {
-                updatedItems.push(`"${updatedItem.name}" (ID: ${updatedItem.id})`);
-              } else {
-                notFoundItems.push(`ID: ${id}`);
-              }
-            });
-            let message = "";
-            if (updatedItems.length > 0) {
-              message += `Successfully updated items: ${updatedItems.join(", ")}.`;
-            }
-            if (notFoundItems.length > 0) {
-              message += ` Error: Items with ${notFoundItems.join(", ")} not found or could not be updated.`;
-            }
-            return message.trim();
-          }
-          case "deleteItem": {
-            const id = (toolCall.args as { id: number }).id;
-            const itemToDelete = getItem(id);
-            if (itemToDelete) {
-              deleteItem(id);
-              return `Successfully deleted item: "${itemToDelete.name}" (ID: ${itemToDelete.id})`;
-            }
-            return `Error: Item with ID ${id} not found.`;
-          }
-          case "deleteItems": {
-            const ids = (toolCall.args as { ids: number[] }).ids;
-            const deletedItems: string[] = [];
-            const notFoundIds: number[] = [];
-            ids.forEach(id => {
-              const itemToDelete = getItem(id);
-              if (itemToDelete) {
-                deleteItem(id);
-                deletedItems.push(`"${itemToDelete.name}" (ID: ${itemToDelete.id})`);
-              } else {
-                notFoundIds.push(id);
-              }
-            });
-            let message = "";
-            if (deletedItems.length > 0) {
-              message += `Successfully deleted items: ${deletedItems.join(", ")}.`;
-            }
-            if (notFoundIds.length > 0) {
-              message += ` Error: Items with IDs ${notFoundIds.join(", ")} not found.`;
-            }
-            return message.trim();
-          }
-          case "navigate": {
-            const path = (toolCall.args as { path: string }).path;
-            setTimeout(() => navigate(path), 100);
-            return `Navigating to ${path}...`;
-          }
-          default:
-            return aiResponse; // Regular response, not a tool call
-          case "generateItemName": {
-            const aiSuggestedName = await fetchAIResponse('Suggest a single, creative name for a new item. Respond with only the name, no other text.', modelName);
-            return `AI suggested name: "${aiSuggestedName.replace(/["'.]/g, '').trim()}"`;
-          }
-        }
+        return handleToolCall(toolCall);
       } catch {
         return aiResponse; // Regular response, not a tool call
       }
