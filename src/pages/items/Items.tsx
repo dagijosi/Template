@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { getItems, deleteItem, Item } from '../../data/items';
+import { getItems, deleteItem } from '../../data/items';
+import type { Item } from '../../data/items';
 import { Button } from '@/common/ui/Button';
 import { FaPlus, FaEye, FaEdit, FaTrash } from 'react-icons/fa';
 import { useState, useEffect } from 'react';
