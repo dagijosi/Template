@@ -1,7 +1,7 @@
 import { Select } from "@/common/ui/Select";
 import { AnimatePresence, motion } from "framer-motion";
 import React, { useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form"; // Updated import
 import {
   FiCpu,
   FiSend,
@@ -20,6 +20,8 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneDark from "react-syntax-highlighter/dist/cjs/styles/prism";
+import CommandHints from "@/components/CommandHints"; // New import
+import { commands } from '@/data/commands';
 
 // CopyButton Component
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
@@ -83,18 +85,28 @@ const AIDemo: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [selectedModel, setSelectedModel] = useState<
-    | "gemini-pro"
-    | "gemini-pro-vision"
-    | "gemini-2.5-flash"
-    | "gemini-2.5-flash-lite"
+    |"gemini-pro"
+    |"gemini-pro-vision"
+    |"gemini-2.5-flash"
+    |"gemini-2.5-flash-lite"
   >("gemini-2.5-flash");
   const [optionsAreLoading, setOptionsAreLoading] = useState(true);
-
-  const { register, handleSubmit, reset, setFocus } = useForm<{
+  const { register, handleSubmit, reset, setFocus, control, setValue } = useForm<{ // Added control and setValue
     message: string;
-  }>({
+  }>({ 
     defaultValues: { message: "" },
   });
+
+  const messageValue = useWatch({ control, name: "message" }); // Watch the input value
+
+  const [showHints, setShowHints] = useState(false); // New state for hints
+  const [highlightedIndex, setHighlightedIndex] = useState(-1); // New state for keyboard navigation
+
+  const filteredCommands = React.useMemo(() => {
+    if (!messageValue || !messageValue.startsWith('/')) return [];
+    const query = messageValue.substring(1).toLowerCase();
+    return commands.filter((cmd) => cmd.name.toLowerCase().includes(query));
+  }, [messageValue]);
 
   const { mutate, isPending } = useAIMutation(selectedModel);
 
@@ -103,6 +115,14 @@ const AIDemo: React.FC = () => {
     addMessage({ text: data.message, sender: "user" });
     mutate(data.message);
     reset();
+  };
+
+  // Handler for selecting a command from the hint menu
+  const handleSelectCommand = (template: string) => {
+    setValue('message', template);
+    setShowHints(false);
+    setHighlightedIndex(-1); // Reset highlighted index
+    setTimeout(() => setFocus('message'), 50); // Focus after state update
   };
 
   useEffect(() => {
@@ -115,6 +135,21 @@ const AIDemo: React.FC = () => {
   }, []);
 
   useEffect(() => setFocus("message"), [setFocus]);
+
+  // Effect to show/hide command hints based on input
+  useEffect(() => {
+    if (messageValue && messageValue.startsWith('/')) {
+      setShowHints(true);
+    } else {
+      setShowHints(false);
+    }
+  }, [messageValue]);
+
+  useEffect(() => {
+    if (!showHints) {
+      setHighlightedIndex(-1);
+    }
+  }, [showHints]);
 
   return (
     <div className="flex flex-col h-full max-h-[calc(100vh-4rem)] bg-gray-900 text-gray-300 font-sans border border-gray-700 shadow-2xl">
@@ -130,10 +165,10 @@ const AIDemo: React.FC = () => {
             onChange={(e) =>
               setSelectedModel(
                 e.target.value as
-                  | "gemini-pro"
-                  | "gemini-pro-vision"
-                  | "gemini-2.5-flash"
-                  | "gemini-2.5-flash-lite"
+                  |"gemini-pro"
+                  |"gemini-pro-vision"
+                  |"gemini-2.5-flash"
+                  |"gemini-2.5-flash-lite"
               )
             }
             icon={<FiCpu />}
@@ -250,9 +285,17 @@ const AIDemo: React.FC = () => {
       {/* Input Form */}
       <footer className="p-4 border-t border-gray-700">
         <form onSubmit={handleSubmit(onSubmit)} className="relative">
+          {showHints && (
+            <CommandHints
+              inputValue={messageValue}
+              onSelect={handleSelectCommand}
+              highlightedIndex={highlightedIndex}
+              setHighlightedIndex={setHighlightedIndex}
+            />
+          )}
           <Textarea
             {...register("message")}
-            placeholder="Ask anything or type a command... (Shift + Enter for new line)"
+            placeholder="Ask anything or type '/' for commands... (Shift + Enter for new line)"
             autoComplete="off"
             rows={1}
             className="w-full max-h-40 bg-gray-800 border-gray-700 rounded-lg font-mono text-sm resize-none pr-12 py-3 custom-scrollbar"
@@ -263,7 +306,26 @@ const AIDemo: React.FC = () => {
               textarea.style.height = `${textarea.scrollHeight}px`;
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (showHints) {
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHighlightedIndex((prev) =>
+                    prev > 0 ? prev - 1 : filteredCommands.length - 1
+                  );
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setHighlightedIndex((prev) =>
+                    prev < filteredCommands.length - 1 ? prev + 1 : 0
+                  );
+                } else if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (highlightedIndex >= 0 && filteredCommands.length > 0) {
+                    handleSelectCommand(filteredCommands[highlightedIndex].template);
+                  } else {
+                    handleSubmit(onSubmit)();
+                  }
+                }
+              } else if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSubmit(onSubmit)();
               }

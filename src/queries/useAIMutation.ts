@@ -1,14 +1,109 @@
-import { useMutation } from '@tanstack/react-query';
-import { fetchAIResponse } from '../api/ai';
-import { useChatStore } from '../store/useChatStore';
+import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { fetchAIResponse } from "../api/ai";
+import { useChatStore } from "../store/useChatStore";
 import {
   addItem,
   deleteItem,
   editItem,
   getItem,
   getItems,
-} from '../data/items';
+} from "../data/items";
 
+// ---------------------- Types ----------------------
+type ToolName =
+  | "navigate"
+  | "getItems"
+  | "getItemById"
+  | "addItem"
+  | "addItems"
+  | "editItem"
+  | "editItems"
+  | "deleteItem"
+  | "deleteItems";
+
+type ToolArgs =
+  | { path: string }
+  | object
+  | { name: string }
+  | { names: string[] }
+  | { id: number; name: string }
+  | { items: Array<{ id: number; name: string }> }
+  | { id: number }
+  | { ids: number[] };
+
+interface ToolCall {
+  tool: ToolName;
+  args: ToolArgs;
+}
+
+// ---------------------- Slash Command Parser ----------------------
+const parseUserCommand = (userPrompt: string): ToolCall | null => {
+  userPrompt = userPrompt.trim();
+
+  if (!userPrompt.startsWith("/")) return null;
+
+  const parts = userPrompt
+    .split(" ")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  const command = parts[0];
+
+  switch (command) {
+    case "/navigate": {
+      let path = parts[1];
+      if (!path) return null;
+      if (!path.startsWith("/")) path = "/" + path; // make absolute
+      return { tool: "navigate", args: { path } };
+    }
+
+    case "/getItems":
+      return { tool: "getItems", args: {} };
+    case "/addItem": {
+      const name = parts.slice(1).join(" ");
+      if (name) return { tool: "addItem", args: { name } };
+      return null;
+    }
+    case "/addItems": {
+      const names = parts.slice(1).join(" ").split(',').map(name => name.trim()).filter(name => name.length > 0);
+      if (names.length > 0) return { tool: "addItems", args: { names } };
+      return null;
+    }
+    case "/editItem": {
+      const id = parseInt(parts[1]);
+      const name = parts.slice(2).join(" ");
+      if (!isNaN(id) && name) return { tool: "editItem", args: { id, name } };
+      return null;
+    }
+    case "/editItems": {
+      const itemPairs = parts.slice(1).join(" ").split(',').map(pair => pair.trim()).filter(pair => pair.length > 0);
+      const items: Array<{ id: number; name: string }> = [];
+      itemPairs.forEach(pair => {
+        const [idStr, name] = pair.split(':').map(s => s.trim());
+        const id = parseInt(idStr);
+        if (!isNaN(id) && name) {
+          items.push({ id, name });
+        }
+      });
+      if (items.length > 0) return { tool: "editItems", args: { items } };
+      return null;
+    }
+    case "/deleteItem": {
+      const id = parseInt(parts[1]);
+      if (!isNaN(id)) return { tool: "deleteItem", args: { id } };
+      return null;
+    }
+    case "/deleteItems": {
+      const ids = parts.slice(1).join(" ").split(',').map(idStr => parseInt(idStr.trim())).filter(id => !isNaN(id));
+      if (ids.length > 0) return { tool: "deleteItems", args: { ids } };
+      return null;
+    }
+    default:
+      return null;
+  }
+};
+
+// ---------------------- System Prompt ----------------------
 const getSystemPrompt = () => {
   const items = getItems();
   return `You are a helpful assistant with access to tools for managing a list of items. When the user wants to manipulate items, you must respond with a JSON object representing a tool call.
@@ -22,10 +117,18 @@ Available tools:
   - Example: { "tool": "getItemById", "args": { "id": 1 } }
 - addItem(name: string): Adds a new item.
   - Example: { "tool": "addItem", "args": { "name": "Buy milk" } }
+- addItems(names: string[]): Adds multiple new items. Provide a comma-separated list of item names.
+  - Example: { "tool": "addItems", "args": { "names": ["Buy milk", "Buy eggs"] } }
 - editItem(id: number, name: string): Edits an item's name.
   - Example: { "tool": "editItem", "args": { "id": 1, "name": "Buy bread" } }
+- editItems(items: Array<{ id: number; name: string }>): Edits multiple items. Provide a comma-separated list of 'id:name' pairs.
+  - Example: { "tool": "editItems", "args": { "items": [{ "id": 1, "name": "Buy bread" }, { "id": 2, "name": "Buy cheese" }] } }
 - deleteItem(id: number): Deletes an item by its ID.
   - Example: { "tool": "deleteItem", "args": { "id": 1 } }
+- deleteItems(ids: number[]): Deletes multiple items by their IDs. Provide a comma-separated list of item IDs.
+  - Example: { "tool": "deleteItems", "args": { "ids": [1, 2] } }
+- navigate(path: string): Navigates to a different page. Valid paths are "/", "/items", "/ai-demo".
+  - Example: { "tool": "navigate", "args": { "path": "/items" } }
 
 Current items for context (do not display this list to the user unless asked):
 ${JSON.stringify(items, null, 2)}
@@ -34,84 +137,224 @@ If the user is not asking to use a tool, just have a normal conversation. Do not
 `;
 };
 
+// ---------------------- useAIMutation Hook ----------------------
 export const useAIMutation = (
-  modelName:
-    | 'gemini-pro'
-    | 'gemini-pro-vision'
-    | 'gemini-2.5-flash'
-    | 'gemini-2.5-flash-lite' = 'gemini-2.5-flash'
+  modelName: 
+    | "gemini-pro"
+    | "gemini-pro-vision"
+    | "gemini-2.5-flash"
+    | "gemini-2.5-flash-lite" = "gemini-2.5-flash"
 ) => {
   const { addMessage } = useChatStore();
+  const navigate = useNavigate();
 
   return useMutation<string, Error, string>({
     mutationFn: async (prompt: string) => {
+      const parsedToolCall = parseUserCommand(prompt);
+
+      // ---------------------- User-friendly slash commands ----------------------
+      if (parsedToolCall) {
+        const toolCall = parsedToolCall;
+        switch (toolCall.tool) {
+          case "getItems": {
+            const items = getItems();
+            if (items.length === 0) return "You have no items.";
+            return `Here are your items:\n${items
+              .map((i) => `- (ID: ${i.id}) ${i.name}`)
+              .join("\n")}`;
+          }
+          case "getItemById": {
+            const id = (toolCall.args as { id: number }).id;
+            const item = getItem(id);
+            return item
+              ? `Item (ID: ${item.id}): ${item.name}`
+              : `Error: Item with ID ${id} not found.`;
+          }
+          case "addItem": {
+            const name = (toolCall.args as { name: string }).name;
+            const newItem = addItem(name);
+            return `Successfully added item: "${newItem.name}" (ID: ${newItem.id})`;
+          }
+          case "addItems": {
+            const names = (toolCall.args as { names: string[] }).names;
+            const newItems = names.map(name => addItem(name));
+            return `Successfully added items: ${newItems.map(item => `"${item.name}" (ID: ${item.id})`).join(", ")}`;
+          }
+          case "editItem": {
+            const { id, name } = toolCall.args as { id: number; name: string };
+            const updatedItem = editItem(id, name);
+            return updatedItem
+              ? `Successfully updated item (ID: ${updatedItem.id}) to "${updatedItem.name}"`
+              : `Error: Item with ID ${id} not found.`;
+          }
+          case "editItems": {
+            const itemsToEdit = (toolCall.args as { items: Array<{ id: number; name: string }> }).items;
+            const updatedItems: string[] = [];
+            const notFoundItems: string[] = [];
+            itemsToEdit.forEach(({ id, name }) => {
+              const updatedItem = editItem(id, name);
+              if (updatedItem) {
+                updatedItems.push(`"${updatedItem.name}" (ID: ${updatedItem.id})`);
+              } else {
+                notFoundItems.push(`ID: ${id}`);
+              }
+            });
+            let message = "";
+            if (updatedItems.length > 0) {
+              message += `Successfully updated items: ${updatedItems.join(", ")}.`;
+            }
+            if (notFoundItems.length > 0) {
+              message += ` Error: Items with ${notFoundItems.join(", ")} not found or could not be updated.`;
+            }
+            return message.trim();
+          }
+          case "deleteItem": {
+            const id = (toolCall.args as { id: number }).id;
+            const itemToDelete = getItem(id);
+            if (itemToDelete) {
+              deleteItem(id);
+              return `Successfully deleted item: "${itemToDelete.name}" (ID: ${itemToDelete.id})`;
+            }
+            return `Error: Item with ID ${id} not found.`;
+          }
+          case "deleteItems": {
+            const ids = (toolCall.args as { ids: number[] }).ids;
+            const deletedItems: string[] = [];
+            const notFoundIds: number[] = [];
+            ids.forEach(id => {
+              const itemToDelete = getItem(id);
+              if (itemToDelete) {
+                deleteItem(id);
+                deletedItems.push(`"${itemToDelete.name}" (ID: ${itemToDelete.id})`);
+              } else {
+                notFoundIds.push(id);
+              }
+            });
+            let message = "";
+            if (deletedItems.length > 0) {
+              message += `Successfully deleted items: ${deletedItems.join(", ")}.`;
+            }
+            if (notFoundIds.length > 0) {
+              message += ` Error: Items with IDs ${notFoundIds.join(", ")} not found.`;
+            }
+            return message.trim();
+          }
+          case "navigate": {
+            const path = (toolCall.args as { path: string }).path;
+            setTimeout(() => navigate(path), 100);
+            return `Navigating to ${path}...`;
+          }
+          default:
+            return `Error: Unrecognized slash command: ${toolCall.tool}`;
+        }
+      }
+
+      // ---------------------- AI Response ----------------------
       const fullPrompt = `${getSystemPrompt()}\n\nUser query: "${prompt}"`;
       const aiResponse = await fetchAIResponse(fullPrompt, modelName);
 
       try {
-        // Sanitize response to handle markdown code blocks
-        const sanitizedResponse = aiResponse.replace(/```json\n|```/g, '').trim();
-        const toolCall = JSON.parse(sanitizedResponse);
+        const sanitized = aiResponse.replace(/```json\n|```/g, "").trim();
+        const toolCall: ToolCall = JSON.parse(sanitized);
 
-        if (toolCall.tool) {
-          switch (toolCall.tool) {
-            case 'getItems': {
-              const items = getItems();
-              if (items.length === 0) {
-                return 'You have no items.';
-              }
-              return `Here are your items:\n${items
-                .map((i) => `- (ID: ${i.id}) ${i.name}`)
-                .join('\n')}`;
-            }
-            case 'getItemById': {
-              const item = getItem(toolCall.args.id);
-              return item
-                ? `Item (ID: ${item.id}): ${item.name}`
-                : `Error: Item with ID ${toolCall.args.id} not found.`;
-            }
-            case 'addItem': {
-              if (!toolCall.args.name) {
-                return 'Error: Please provide a name for the item.';
-              }
-              const newItem = addItem(toolCall.args.name);
-              return `Successfully added item: "${newItem.name}" (ID: ${newItem.id})`;
-            }
-            case 'editItem': {
-              if (!toolCall.args.id || !toolCall.args.name) {
-                return 'Error: Please provide an item ID and a new name.';
-              }
-              const updatedItem = editItem(toolCall.args.id, toolCall.args.name);
-              return updatedItem
-                ? `Successfully updated item (ID: ${updatedItem.id}) to "${updatedItem.name}"`
-                : `Error: Item with ID ${toolCall.args.id} not found.`;
-            }
-            case 'deleteItem': {
-              if (!toolCall.args.id) {
-                return 'Error: Please provide an item ID to delete.';
-              }
-              const itemToDelete = getItem(toolCall.args.id);
-              if (itemToDelete) {
-                deleteItem(toolCall.args.id);
-                return `Successfully deleted item: "${itemToDelete.name}" (ID: ${itemToDelete.id})`;
-              }
-              return `Error: Item with ID ${toolCall.args.id} not found.`;
-            }
-            default:
-              // Unrecognized tool
-              return aiResponse;
+        switch (toolCall.tool) {
+          case "getItems": {
+            const items = getItems();
+            if (items.length === 0) return "You have no items.";
+            return `Here are your items:\n${items
+              .map((i) => `- (ID: ${i.id}) ${i.name}`)
+              .join("\n")}`;
           }
+          case "getItemById": {
+            const id = (toolCall.args as { id: number }).id;
+            const item = getItem(id);
+            return item
+              ? `Item (ID: ${item.id}): ${item.name}`
+              : `Error: Item with ID ${id} not found.`;
+          }
+          case "addItem": {
+            const name = (toolCall.args as { name: string }).name;
+            const newItem = addItem(name);
+            return `Successfully added item: "${newItem.name}" (ID: ${newItem.id})`;
+          }
+          case "addItems": {
+            const names = (toolCall.args as { names: string[] }).names;
+            const newItems = names.map(name => addItem(name));
+            return `Successfully added items: ${newItems.map(item => `"${item.name}" (ID: ${item.id})`).join(", ")}`;
+          }
+          case "editItem": {
+            const { id, name } = toolCall.args as { id: number; name: string };
+            const updatedItem = editItem(id, name);
+            return updatedItem
+              ? `Successfully updated item (ID: ${updatedItem.id}) to "${updatedItem.name}"`
+              : `Error: Item with ID ${id} not found.`;
+          }
+          case "editItems": {
+            const itemsToEdit = (toolCall.args as { items: Array<{ id: number; name: string }> }).items;
+            const updatedItems: string[] = [];
+            const notFoundItems: string[] = [];
+            itemsToEdit.forEach(({ id, name }) => {
+              const updatedItem = editItem(id, name);
+              if (updatedItem) {
+                updatedItems.push(`"${updatedItem.name}" (ID: ${updatedItem.id})`);
+              } else {
+                notFoundItems.push(`ID: ${id}`);
+              }
+            });
+            let message = "";
+            if (updatedItems.length > 0) {
+              message += `Successfully updated items: ${updatedItems.join(", ")}.`;
+            }
+            if (notFoundItems.length > 0) {
+              message += ` Error: Items with ${notFoundItems.join(", ")} not found or could not be updated.`;
+            }
+            return message.trim();
+          }
+          case "deleteItem": {
+            const id = (toolCall.args as { id: number }).id;
+            const itemToDelete = getItem(id);
+            if (itemToDelete) {
+              deleteItem(id);
+              return `Successfully deleted item: "${itemToDelete.name}" (ID: ${itemToDelete.id})`;
+            }
+            return `Error: Item with ID ${id} not found.`;
+          }
+          case "deleteItems": {
+            const ids = (toolCall.args as { ids: number[] }).ids;
+            const deletedItems: string[] = [];
+            const notFoundIds: number[] = [];
+            ids.forEach(id => {
+              const itemToDelete = getItem(id);
+              if (itemToDelete) {
+                deleteItem(id);
+                deletedItems.push(`"${itemToDelete.name}" (ID: ${itemToDelete.id})`);
+              } else {
+                notFoundIds.push(id);
+              }
+            });
+            let message = "";
+            if (deletedItems.length > 0) {
+              message += `Successfully deleted items: ${deletedItems.join(", ")}.`;
+            }
+            if (notFoundIds.length > 0) {
+              message += ` Error: Items with IDs ${notFoundIds.join(", ")} not found.`;
+            }
+            return message.trim();
+          }
+          case "navigate": {
+            const path = (toolCall.args as { path: string }).path;
+            setTimeout(() => navigate(path), 100);
+            return `Navigating to ${path}...`;
+          }
+          default:
+            return aiResponse;
         }
-        return aiResponse; // Not a tool call
-      } catch  {
-        return aiResponse; // Not JSON, just a regular response
+      } catch {
+        return aiResponse; // Regular response, not a tool call
       }
     },
-    onSuccess: (data) => {
-      addMessage({ text: data, sender: 'ai' });
-    },
-    onError: (error) => {
-      addMessage({ text: `Error: ${error.message}`, sender: 'ai' });
-    },
+    onSuccess: (data) => addMessage({ text: data, sender: "ai" }),
+    onError: (error) =>
+      addMessage({ text: `Error: ${error.message}`, sender: "ai" }),
   });
 };
