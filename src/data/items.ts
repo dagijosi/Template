@@ -26,3 +26,12 @@ export const addItem = (name: string): Item => {
 export const deleteItem = (id: number): void => {
   items = items.filter((item) => item.id !== id);
 };
+
+export const editItem = (id: number, name: string): Item | undefined => {
+  const itemIndex = items.findIndex((item) => item.id === id);
+  if (itemIndex > -1) {
+    items[itemIndex].name = name;
+    return items[itemIndex];
+  }
+  return undefined;
+};
