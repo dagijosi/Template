@@ -4,9 +4,16 @@ export interface Item {
 }
 
 let items: Item[] = [
-  { id: 1, name: "Item 1" },
-  { id: 2, name: "Item 2" },
-  { id: 3, name: "Item 3" },
+  { id: 1, name: "Buy groceries (milk, eggs, bread)" },
+  { id: 2, name: "Schedule dentist appointment" },
+  { id: 3, name: "Read 'Dune' by Frank Herbert" },
+  { id: 4, name: "Plan weekend trip to the mountains" },
+  { id: 5, name: "Learn React Hooks (useState, useEffect)" },
+  { id: 6, name: "Fix leaky faucet in bathroom" },
+  { id: 7, name: "Call mom for her birthday" },
+  { id: 8, name: "Research new coffee makers" },
+  { id: 9, name: "Write blog post about AI tools" },
+  { id: 10, name: "Go for a 30-minute run" },
 ];
 
 export const getItems = (): Item[] => items;
